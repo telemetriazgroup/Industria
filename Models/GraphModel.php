@@ -93,6 +93,15 @@ class GraphModel extends Query{
         return $res;
     }
 
+    public function DatosRecienteIndustria($imei){
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, urlapiMongo3."/Datos/reciente/".rawurlencode($imei));
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        $res = curl_exec($ch);
+        curl_close($ch);
+        return $res;
+    }
+
 
 
 }

@@ -14,6 +14,7 @@ $(document).ready(function(){
     //calculo de la fecha de fin
     f_fin.setMinutes(f_fin.getMinutes() - f_fin.getTimezoneOffset());
     $('#f_fin').val(f_fin.toISOString().slice(0, 16));
+    cargarTabla12h();
 });
 
 async function obtenerDispositivos(){
@@ -246,29 +247,84 @@ function dataTable2(data){
     });
 }
 
-function buscarData(e){
-    e.preventDefault();
+function mostrarTabla(datos){
+    alertas(datos.msg, datos.icon);
+    const imei = document.getElementById('dispositivos').value || '867869061617106';
+    document.getElementById('titleData').innerText = 'IMEI ' + imei;
+    dataTable(datos.data);
+}
+
+function preguntarVolumenTabla(datos){
+    Swal.fire({
+        icon: 'question',
+        title: 'Hay mas de 2000 datos',
+        text: 'Quieres ver los 2000 o todos los datos?',
+        showCancelButton: true,
+        confirmButtonText: 'Todos los datos',
+        cancelButtonText: 'Ver los 2000',
+        allowOutsideClick: false
+    }).then(function(result){
+        if (result.isConfirmed) {
+            consultarTabla(true);
+        } else if (result.dismiss === Swal.DismissReason.cancel) {
+            datos.msg = 'Se muestran las 2000 lecturas mas recientes';
+            datos.icon = 'success';
+            mostrarTabla(datos);
+        }
+    });
+}
+
+function consultarTabla(completo){
     const http = new XMLHttpRequest();
     const url = base_url + 'Data/DatosDispositivoPorFecha';
     const frm = document.getElementById('frmData');
     const formData = new FormData(frm);
+    if (completo) {
+        formData.append('completo', '1');
+        Swal.fire({
+            title: 'Consultando todos los datos',
+            allowOutsideClick: false,
+            didOpen: function () { Swal.showLoading(); }
+        });
+    }
     http.open("POST", url);
     http.send(formData);
     http.onreadystatechange = function(){
         if(this.readyState == 4 && this.status == 200){
             const datos = JSON.parse(this.responseText);
-            console.log(datos);
+            if (datos.parcial) {
+                preguntarVolumenTabla(datos);
+                return;
+            }
+            if (completo) {
+                Swal.close();
+            }
             if(datos.icon == 'success'){
-                alertas(datos.msg, datos.icon);
-                const imei = document.getElementById('dispositivos').value || '867869061617106';
-                document.getElementById('titleData').innerText = 'IMEI ' + imei;
-                setTimeout(() => {
-                    dataTable(datos.data);
-                }, 1000);
+                mostrarTabla(datos);
             }else{
                 alertas(datos.msg, datos.icon);
             }
         }
     }
+}
 
+function cargarTabla12h(){
+    const http = new XMLHttpRequest();
+    http.open('GET', base_url + 'Data/DatosRecientes');
+    http.send();
+    http.onreadystatechange = function(){
+        if (this.readyState == 4 && this.status == 200) {
+            const datos = JSON.parse(this.responseText);
+            if (datos.icon == 'success') {
+                mostrarTabla(datos);
+            } else if (datos.msg) {
+                alertas(datos.msg, datos.icon);
+            }
+        }
+    }
+}
+
+function buscarData(e){
+    e.preventDefault();
+    consultarTabla(false);
 }

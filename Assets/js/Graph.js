@@ -1336,38 +1336,93 @@ $(document).ready(function(){
     $('#f_inicio').val(f_inicio.toISOString().slice(0, 16));
     f_fin.setMinutes(f_fin.getMinutes() - f_fin.getTimezoneOffset());
     $('#f_fin').val(f_fin.toISOString().slice(0, 16));
+    cargarGrafica12h();
 });
 
-function buscarGraph(e){
-    e.preventDefault();
+function mostrarGrafica(datos){
+    const dispositivo = document.getElementById('listaDivece').value;
+    const f_inicio = document.getElementById('f_inicio').value;
+    const f_fin = document.getElementById('f_fin').value;
+    alertas(datos.msg, datos.icono);
+    btnDownload = `<a id="bajarGraph" class="btn btn-outline-success btn-lg btn-block w-100" onclick="downloadGraph2('${dispositivo}', '${f_inicio}', '${f_fin}')">DOWNLOAD GRAPH</a>`;
+    $('#btn_download_graph').html(btnDownload);
+    graficaGenset(datos.data);
+}
+
+function preguntarVolumenGrafica(datos){
+    Swal.fire({
+        icon: 'question',
+        title: 'Hay mas de 2000 datos',
+        text: 'Quieres ver los 2000 o todos los datos?',
+        showCancelButton: true,
+        confirmButtonText: 'Todos los datos',
+        cancelButtonText: 'Ver los 2000',
+        allowOutsideClick: false
+    }).then(function(result){
+        if (result.isConfirmed) {
+            consultarGrafica(true);
+        } else if (result.dismiss === Swal.DismissReason.cancel) {
+            datos.msg = 'Se muestran las 2000 lecturas mas recientes';
+            datos.icono = 'success';
+            mostrarGrafica(datos);
+        }
+    });
+}
+
+function consultarGrafica(completo){
     const http = new XMLHttpRequest();
     const url = base_url + 'Graph/DatosDispositivoPorFecha';
     const frm = document.getElementById('frmGraph');
     const data = new FormData(frm);
-    const dispositivo = document.getElementById('listaDivece').value;
-    const f_inicio = document.getElementById('f_inicio').value;
-    const f_fin = document.getElementById('f_fin').value;
+    if (completo) {
+        data.append('completo', '1');
+        Swal.fire({
+            title: 'Consultando todos los datos',
+            allowOutsideClick: false,
+            didOpen: function () { Swal.showLoading(); }
+        });
+    }
     http.open("POST", url);
     http.send(data);
     http.onreadystatechange = function(){
         if(this.readyState == 4 && this.status == 200){
             const datos = JSON.parse(this.responseText);
-            console.log('----------------')
-            console.log(datos)
+            if (datos.parcial) {
+                preguntarVolumenGrafica(datos);
+                return;
+            }
+            if (completo) {
+                Swal.close();
+            }
             if(datos.icono == 'success'){
-                alertas(datos.msg, datos.icono);
-                btnDownload = `<a id="bajarGraph" class="btn btn-outline-success btn-lg btn-block w-100" onclick="downloadGraph2('${dispositivo}', '${f_inicio}', '${f_fin}')">DOWNLOAD GRAPH</a>`;
-                $('#btn_download_graph').html(btnDownload);
-                setTimeout(() => {
-                    graficaGenset(datos.data);
-                }, 1000);
+                mostrarGrafica(datos);
             }else{
                 alertas(datos.msg, datos.icono);
-                //destruye grafica
                 if (typeof w !== 'undefined') { w.destroy();}
             }
         }
     }
+}
+
+function cargarGrafica12h(){
+    const http = new XMLHttpRequest();
+    http.open('GET', base_url + 'Graph/DatosRecientes');
+    http.send();
+    http.onreadystatechange = function(){
+        if (this.readyState == 4 && this.status == 200) {
+            const datos = JSON.parse(this.responseText);
+            if (datos.icono == 'success') {
+                mostrarGrafica(datos);
+            } else if (datos.msg) {
+                alertas(datos.msg, datos.icono);
+            }
+        }
+    }
+}
+
+function buscarGraph(e){
+    e.preventDefault();
+    consultarGrafica(false);
 }
 
 function obtenerHoraPeru() {

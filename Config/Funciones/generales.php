@@ -527,6 +527,172 @@ function filasTablaIndustria($lecturas){
     return array('datos' => $datos);
 }
 
+function decodificarLecturasIndustria($raw){
+    $resultado = json_decode($raw);
+    if ($resultado == null) {
+        return array('error' => 'No se encontraron datos');
+    }
+    if (isset($resultado->code) && intval($resultado->code) != 200) {
+        $texto = isset($resultado->error) ? $resultado->error : 'Parametros invalidos';
+        return array('error' => $texto);
+    }
+    $lecturas = (isset($resultado->data) && is_array($resultado->data)) ? $resultado->data : array();
+    $criterio = isset($resultado->criterio) ? $resultado->criterio : '';
+    $total = isset($resultado->total) ? intval($resultado->total) : count($lecturas);
+    return array('lecturas' => $lecturas, 'criterio' => $criterio, 'total' => $total);
+}
+
+function claveLecturaIndustria($row){
+    $id = isset($row->id) ? $row->id : '';
+    $fecha = isset($row->fecha_recepcion) ? $row->fecha_recepcion : '';
+    $imei = isset($row->IMEI) ? $row->IMEI : '';
+    return $id.'|'.$fecha.'|'.$imei;
+}
+
+function rangoTruncadoIndustria($lecturas, $desde, $limite){
+    if (!is_array($lecturas) || count($lecturas) < intval($limite)) {
+        return false;
+    }
+    $desdeDt = fechaIndustria($desde);
+    $oldest = null;
+    foreach ($lecturas as $row) {
+        $marca = isset($row->fecha_recepcion) ? $row->fecha_recepcion : '';
+        $dt = fechaIndustria($marca);
+        if ($dt != null && ($oldest == null || $dt < $oldest)) {
+            $oldest = $dt;
+        }
+    }
+    if ($oldest == null || $desdeDt == null) {
+        return true;
+    }
+    return $oldest > $desdeDt;
+}
+
+function lecturasRangoCompleto($model, $imei, $desde, $hasta){
+    $acumulado = array();
+    $vistos = array();
+    $cursorHasta = $hasta;
+    $desdeDt = fechaIndustria($desde);
+    $guard = 0;
+    while ($guard < 250) {
+        $guard++;
+        $raw = $model->DatosRangoIndustria($imei, $desde, $cursorHasta, 2000);
+        $dec = decodificarLecturasIndustria($raw);
+        if (isset($dec['error'])) {
+            if (count($acumulado) == 0) {
+                return $dec;
+            }
+            break;
+        }
+        $lecturas = $dec['lecturas'];
+        if (count($lecturas) == 0) {
+            break;
+        }
+        $oldest = null;
+        foreach ($lecturas as $row) {
+            $clave = claveLecturaIndustria($row);
+            if (!isset($vistos[$clave])) {
+                $vistos[$clave] = true;
+                $acumulado[] = $row;
+            }
+            $marca = isset($row->fecha_recepcion) ? $row->fecha_recepcion : '';
+            $dt = fechaIndustria($marca);
+            if ($dt != null && ($oldest == null || $dt < $oldest)) {
+                $oldest = $dt;
+            }
+        }
+        if (count($lecturas) < 2000) {
+            break;
+        }
+        if ($oldest == null || $desdeDt == null || $oldest <= $desdeDt) {
+            break;
+        }
+        $siguiente = clone $oldest;
+        $siguiente->modify('-1 second');
+        $nuevoHasta = $siguiente->format('Y-m-d H:i:s');
+        if ($nuevoHasta == $cursorHasta || $siguiente < $desdeDt) {
+            break;
+        }
+        $cursorHasta = $nuevoHasta;
+    }
+    return array('lecturas' => $acumulado);
+}
+
+function respuestaDesdeLecturas($lecturas, $tipo, $parcial){
+    $iconKey = ($tipo == 'tabla') ? 'icon' : 'icono';
+    if (!is_array($lecturas) || count($lecturas) == 0) {
+        return array('msg' => 'No se encontraron datos', $iconKey => 'warning', 'parcial' => false);
+    }
+    $data = ($tipo == 'tabla') ? filasTablaIndustria($lecturas) : serieGraficaIndustria($lecturas);
+    if ($parcial) {
+        return array(
+            'msg' => 'Hay mas de 2000 datos',
+            $iconKey => 'question',
+            'parcial' => true,
+            'data' => $data,
+            'total' => count($lecturas)
+        );
+    }
+    $msg = ($tipo == 'tabla') ? 'Datos encontrados' : 'Datos obtenidos correctamente';
+    return array(
+        'msg' => $msg,
+        $iconKey => 'success',
+        'parcial' => false,
+        'data' => $data,
+        'total' => count($lecturas)
+    );
+}
+
+function respuestaRecienteIndustria($raw, $tipo){
+    $iconKey = ($tipo == 'tabla') ? 'icon' : 'icono';
+    $dec = decodificarLecturasIndustria($raw);
+    if (isset($dec['error'])) {
+        return array('msg' => $dec['error'], $iconKey => 'warning', 'parcial' => false);
+    }
+    if ($dec['criterio'] == '100' || count($dec['lecturas']) == 0) {
+        return array('msg' => 'No hay lecturas en las ultimas 12 horas', $iconKey => 'warning', 'parcial' => false);
+    }
+    $res = respuestaDesdeLecturas($dec['lecturas'], $tipo, false);
+    $res['msg'] = 'Lecturas de las ultimas 12 horas';
+    return $res;
+}
+
+function consultarRangoGrafica($model, $imei, $desde, $hasta, $completo){
+    if ($completo) {
+        set_time_limit(180);
+        $paquete = lecturasRangoCompleto($model, $imei, $desde, $hasta);
+        if (isset($paquete['error'])) {
+            return array('msg' => $paquete['error'], 'icono' => 'warning', 'parcial' => false);
+        }
+        return respuestaDesdeLecturas($paquete['lecturas'], 'grafica', false);
+    }
+    $raw = $model->DatosRangoIndustria($imei, $desde, $hasta, 2000);
+    $dec = decodificarLecturasIndustria($raw);
+    if (isset($dec['error'])) {
+        return array('msg' => $dec['error'], 'icono' => 'warning', 'parcial' => false);
+    }
+    $parcial = rangoTruncadoIndustria($dec['lecturas'], $desde, 2000);
+    return respuestaDesdeLecturas($dec['lecturas'], 'grafica', $parcial);
+}
+
+function consultarRangoTabla($model, $imei, $desde, $hasta, $completo){
+    if ($completo) {
+        set_time_limit(180);
+        $paquete = lecturasRangoCompleto($model, $imei, $desde, $hasta);
+        if (isset($paquete['error'])) {
+            return array('msg' => $paquete['error'], 'icon' => 'warning', 'parcial' => false);
+        }
+        return respuestaDesdeLecturas($paquete['lecturas'], 'tabla', false);
+    }
+    $raw = $model->DatosRangoIndustria($imei, $desde, $hasta, 2000);
+    $dec = decodificarLecturasIndustria($raw);
+    if (isset($dec['error'])) {
+        return array('msg' => $dec['error'], 'icon' => 'warning', 'parcial' => false);
+    }
+    $parcial = rangoTruncadoIndustria($dec['lecturas'], $desde, 2000);
+    return respuestaDesdeLecturas($dec['lecturas'], 'tabla', $parcial);
+}
+
 function respuestaGraficaIndustria($raw, $limite){
     $resultado = json_decode($raw);
     if ($resultado == null) {

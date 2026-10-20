@@ -93,6 +93,15 @@ class DataModel extends Query{
         curl_close($ch);
         return $res;
     }
+
+    public function DatosRecienteIndustria($imei){
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, urlapiMongo3."/Datos/reciente/".rawurlencode($imei));
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        $res = curl_exec($ch);
+        curl_close($ch);
+        return $res;
+    }
    
     public function ListaSensoresUsda(){
         $sql = "SELECT id, usda, relacion, pallet FROM sensores";

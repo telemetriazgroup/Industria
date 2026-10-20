@@ -138,6 +138,13 @@ class Graph extends Controller
         echo json_encode($data, JSON_UNESCAPED_UNICODE);
     }
 
+    public function DatosRecientes(){
+        $imei = '867869061617106';
+        $raw = $this->model->DatosRecienteIndustria($imei);
+        echo json_encode(respuestaRecienteIndustria($raw, 'grafica'), JSON_UNESCAPED_UNICODE);
+        die();
+    }
+
     public function DatosDispositivoPorFecha(){
         $dispositivo = isset($_POST['listaDivece']) ? $_POST['listaDivece'] : '';
         if ($dispositivo == '' || $dispositivo == '0') {
@@ -145,15 +152,15 @@ class Graph extends Controller
         }
         $f_inicio = isset($_POST['f_inicio']) ? $_POST['f_inicio'] : '';
         $f_fin = isset($_POST['f_fin']) ? $_POST['f_fin'] : '';
+        $completo = isset($_POST['completo']) && $_POST['completo'] == '1';
         $limite = 2000;
         $error = validarConsultaIndustria($dispositivo, $f_inicio, $f_fin, $limite);
         if ($error != null) {
-            $res = array('msg' => $error, 'icono' => 'warning');
+            $res = array('msg' => $error, 'icono' => 'warning', 'parcial' => false);
         } else {
             $desde = fechaIndustria($f_inicio)->format('Y-m-d H:i:s');
             $hasta = fechaIndustria($f_fin)->format('Y-m-d H:i:s');
-            $raw = $this->model->DatosRangoIndustria($dispositivo, $desde, $hasta, $limite);
-            $res = respuestaGraficaIndustria($raw, $limite);
+            $res = consultarRangoGrafica($this->model, $dispositivo, $desde, $hasta, $completo);
         }
 
         echo json_encode($res, JSON_UNESCAPED_UNICODE);
